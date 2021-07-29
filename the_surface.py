@@ -85,10 +85,3 @@ if pl_tracks:
 
 # Add new songs from the library into the playlist
 sp.playlist_add_items(managed_pl['id'], new_tracks)
-
-
-
-
-# Think about multiple songs from saved artists in the playlist. I guess I don't care since either
-#   the user created the pl themselves to their liking or it will have been created by this program,
-#   which will have used the oldest song in the lib by default.
