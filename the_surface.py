@@ -1,4 +1,7 @@
+import os
 import spotipy
+
+from datetime import date
 from spotipy.oauth2 import SpotifyOAuth
 
 scope = [
@@ -8,9 +11,8 @@ scope = [
     'user-library-read',
 ]
 
-managed_pl_name = 'The Surface'  # TODO: Parameterize
-
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
+managed_pl_name = os.getenv('SURFACE_PLAYLIST_NAME') or 'The Surface'
 
 
 # Get the managed playlist
@@ -20,12 +22,19 @@ managed_pl = None
 
 while not managed_pl:
     playlists = sp.current_user_playlists(limit=limit, offset=offset)
-    
+
     if not playlists['items']:
-        # TODO: Create it, or at least offer to create it
-        raise KeyError(
-            f'Could not find a playlist called "{managed_pl_name}" for user {sp.current_user()["name"]}'
-        )
+        answer = input(f'No playlist named "{managed_pl_name}" found. Create one? [(y)/n] ')
+        if not answer or answer.lower()[0] == 'y':
+            managed_pl = sp.user_playlist_create(
+                sp.current_user()['id'], managed_pl_name,
+                description=f"Created by the_surface.py on {date.today()}")
+            print(f'Playlist "{managed_pl_name}" has been created.')
+            break
+        else:
+            raise KeyError(
+                f'Could not find a playlist called "{managed_pl_name}" for user {sp.current_user()["name"]}'
+            )
 
     for pl in playlists['items']:
         if pl['name'] == managed_pl_name:
@@ -87,15 +96,18 @@ for artist in artist_tracks:
 
 # Remove tracks from the playlist by artists which no longer have songs in the library
 if pl_tracks:
-    sp.playlist_remove_all_occurrences_of_items(managed_pl['id'],
-            [pl_tracks[a] for a in pl_tracks if pl_tracks[a] is not None])  # TODO: fix local files
+    sp.playlist_remove_all_occurrences_of_items(
+        managed_pl['id'],
+        [pl_tracks[a] for a in pl_tracks if pl_tracks[a] is not None]
+    )  # TODO: fix local files
+
 
 # Add songs from artists with saved library tracks which aren't in the playlist
-# TODO: I'm not sure what the limit is for adding songs. I assumed the library would paginate these
-#       or break them up, but it doesn't, so it has to be done here
+# TODO: I'm not sure what the limit is for adding songs. spotipy doesn't chunk requests like this
 def chunk(lst, size):
     for i in range(0, len(lst), size):
-        yield lst[i:i+size]
+        yield lst[i:i + size]
+
 
 for tracks in chunk(new_tracks, 50):
     sp.playlist_add_items(managed_pl['id'], tracks)
