@@ -4,6 +4,7 @@ import spotipy
 from datetime import date
 from spotipy.oauth2 import SpotifyOAuth
 
+
 scope = [
     'playlist-modify-public',
     'playlist-modify-private',
@@ -16,7 +17,7 @@ managed_pl_name = os.getenv('SURFACE_PLAYLIST_NAME') or 'The Surface'
 
 
 # Get the managed playlist
-limit = 50  # TODO: It seems like the allowed limit is different for different requests
+limit = 50
 offset = 0
 managed_pl = None
 
@@ -103,11 +104,10 @@ if pl_tracks:
 
 
 # Add songs from artists with saved library tracks which aren't in the playlist
-# TODO: I'm not sure what the limit is for adding songs. spotipy doesn't chunk requests like this
 def chunk(lst, size):
     for i in range(0, len(lst), size):
         yield lst[i:i + size]
 
 
-for tracks in chunk(new_tracks, 50):
+for tracks in chunk(new_tracks, 100):
     sp.playlist_add_items(managed_pl['id'], tracks)
