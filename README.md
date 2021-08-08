@@ -23,8 +23,7 @@ Local files can be removed from playlists, so if an artist is found to be in the
     - toggles for removing tracks from the maintained playlist, adding new ones, etc.
     - sorting order? Sorting might be a bit of a pain with the API
     - more?
-- local files/tracks all over the script
-    - I should see what happens when a local file is the first saved track for an artist. Maybe just ignore all the `is_local` ones in the population code?
+- Need to make sure local files work as expected both in the library and in the playlist
 
 - sort the songs in the playlist by artist name
     - right now they're sorted by first-saved because of how the code works

@@ -77,9 +77,11 @@ results = sp.user_playlist_tracks(playlist_id=managed_pl['id'], limit=limit, off
 
 while results['items']:
     for t in results['items']:
-        artist = t['track']['artists'][0]['id']
-        if artist is None or t['track']['id'] is None:  # Ignore local files (TODO?)
+        if t['track']['is_local']:
+            # Local tracks are not supported for now. Maybe log something for the user.
             continue
+
+        artist = t['track']['artists'][0]['id']
         pl_tracks[artist] = t['track']['id']
 
     offset += limit
@@ -99,8 +101,7 @@ for artist in artist_tracks:
 if pl_tracks:
     sp.playlist_remove_all_occurrences_of_items(
         managed_pl['id'],
-        [pl_tracks[a] for a in pl_tracks if pl_tracks[a] is not None]
-    )  # TODO: fix local files
+        [pl_tracks[a] for a in pl_tracks])
 
 
 # Add songs from artists with saved library tracks which aren't in the playlist
