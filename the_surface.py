@@ -34,7 +34,7 @@ while not managed_pl:
             break
         else:
             raise KeyError(
-                f'Could not find a playlist called "{managed_pl_name}" for user {sp.current_user()["name"]}'
+                f'Could not find a playlist called "{managed_pl_name}" for user {sp.current_user()["display_name"]}'
             )
 
     for pl in playlists['items']:

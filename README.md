@@ -14,6 +14,8 @@ Local files can be removed from playlists, so if an artist is found to be in the
 - I should host this somewhere
 - change the code to use user logins instead of requiring so many tokens/keys
 - make public on github when enough of this stuff is done
+- Exiting by raising exceptions looks kind of awkward, even when the exception makes sense. Maybe exit with a bad
+  return code, but more gracefully?
 - documentation
 - logging
     - Don't know if it would be worth logging all the changes made since it would slow down the script
