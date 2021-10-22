@@ -1,13 +1,37 @@
-import os
+from datetime import date
+
 import spotipy
 
-from datetime import date
 from decouple import config
 from spotipy.oauth2 import SpotifyOAuth
 
 
 def get_playlist(sp, name):
-    """Get the playlist object for the playlist called `name`"""
+    """Search Spotify for the playlist called `name` owned by the authenticated user and return it
+    if found.
+
+    This /should/ return `sp.current_user()`'s playlists before any public ones, even if `name` is a
+    private playlist, but the Spotify Web API doesn't guarantee that. It actually says, "Only
+    popular public playlists are returned," and, "You cannot search for playlists within a user's
+    library," but those both seem to be false.
+
+    I have seen playlists I've never opened before be returned before playlists I'm following when
+    those new playlists have been updated more recently than the followed playlists, but I don't
+    know how that works with playlists I own.
+    """
+    managed_pl = sp.search(q=name, type='playlist', limit=1)['playlists']['items']
+    if not managed_pl or managed_pl[0]['owner']['id'] != sp.current_user()['id']:
+        return None
+
+    return managed_pl[0]
+
+
+def get_playlist_thorough(sp, name):
+    """Search through sp.current_user()'s playlists to find the one called `name`.
+
+    This will take longer than `get_playlist`, but it's more guaranteed to work according to the
+    API.
+    """
     limit = 50
     offset = 0
     managed_pl = None
@@ -16,17 +40,8 @@ def get_playlist(sp, name):
         playlists = sp.current_user_playlists(limit=limit, offset=offset)
 
         if not playlists['items']:
-            answer = input(f'No playlist named "{name}" found. Create one? [(y)/n] ')
-            if not answer or answer.lower()[0] == 'y':
-                managed_pl = sp.user_playlist_create(
-                    sp.current_user()['id'], name,
-                    description=f"Created by the_surface.py on {date.today()}")
-                print(f'\tPlaylist "{name}" has been created.')
-                break
-            else:
-                raise KeyError(
-                    f'Could not find a playlist called "{name}" for user {sp.current_user()["display_name"]}'
-                )
+            # None of the user's playlists matched. Time to stop looking
+            return None
 
         for pl in playlists['items']:
             if pl['name'] == name:
@@ -128,6 +143,15 @@ if __name__ == '__main__':
 
     print(f'Attempting to get the "{managed_pl_name}" playlist')
     managed_pl = get_playlist(sp, managed_pl_name)
+    if not managed_pl:
+        answer = input(f'No playlist named "{managed_pl_name}" found. Create one? [(y)/n] ')
+        if not answer or answer.lower()[0] == 'y':
+            managed_pl = sp.user_playlist_create(
+                sp.current_user()['id'], managed_pl_name,
+                description=f"Created by the_surface.py on {date.today()}")
+            print(f'\tPlaylist "{managed_pl_name}" has been created.')
+        else:
+            raise SystemExit(f'No playlist called {managed_pl_name} found. Nothing to do.')
 
     print(f'Collecting tracks from "{managed_pl_name}"... ')
     pl_tracks = get_playlist_tracks(sp, managed_pl)
@@ -137,7 +161,7 @@ if __name__ == '__main__':
     lib_artist_tracks = get_artist_first_saved_tracks(sp)
     print(f'\tFound {len(lib_artist_tracks)} tracks.')
 
-    print('Finding the difference between Library and "{managed_pl_name}" artists')
+    print(f'Finding the difference between Library and "{managed_pl_name}" artists')
     new_tracks = get_artist_difference(lib_artist_tracks, pl_tracks)
 
     if pl_tracks and remove_missing_artists:
