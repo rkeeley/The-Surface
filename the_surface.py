@@ -6,77 +6,123 @@ from decouple import config
 from spotipy.oauth2 import SpotifyOAuth
 
 
-def get_playlist(sp, name):
+def get_playlist(sp, name: str, must_be_owner: bool = False):
     """Search Spotify for the playlist called `name` owned by the authenticated user and return it
     if found.
 
-    This /should/ return `sp.current_user()`'s playlists before any public ones, even if `name` is a
-    private playlist, but the Spotify Web API doesn't guarantee that. It actually says, "Only
-    popular public playlists are returned," and, "You cannot search for playlists within a user's
-    library," but those both seem to be false.
+    This is a quick first attempt at getting the `SURFACE_PLAYLIST_NAME` playlist using the Spotify
+    Search API.
 
-    I have seen playlists I've never opened before be returned before playlists I'm following when
-    those new playlists have been updated more recently than the followed playlists, but I don't
-    know how that works with playlists I own.
+    Because the search is on playlist name and not ID, it's possible for an undesired or unexpected
+    playlist to be returned from the API. For example:
+
+        - if the expected playlist has not been updated recently and a playlist with a similar name
+          has, that similarly-named playlist might be the first result, even if it is not a popular
+          playlist and the user has never seen it before.
+        - if the logged-in user is not the playlist owner for the expected playlist and does not
+          follow it, it's less likely for the playlist to appear first in the search response unless
+          it has a unique name.
+
+    These are both limitations of the Spotify Search API, and why this function is a hopeful first
+    attempt. To guarantee that the current user's playlists will be found, use
+    `get_playlist_thorough`.
+
+    :param name: The name of the playlist to find
+    :param must_be_owner: True if the current user must be the owner of the playlist.
+        This can be useful to ensure that the correct playlist has been found, but won't work if the
+        `SURFACE_PLAYLIST_NAME` playlist is collaborative and owned by another user.
+    :return: None on error, or the `SURFACE_PLAYLIST_NAME` playlist object on success.
     """
-    managed_pl = sp.search(q=name, type='playlist', limit=1)['playlists']['items']
-    if not managed_pl or managed_pl[0]['owner']['id'] != sp.current_user()['id']:
+    managed_pl = sp.search(q=f'"{name}"', type='playlist', limit=1)
+    if not managed_pl:
+        return None
+
+    managed_pl = managed_pl['playlists']['items']
+    if not managed_pl:
+        return None
+
+    if must_be_owner and managed_pl[0]['owner']['id'] != sp.current_user()['id']:
         return None
 
     return managed_pl[0]
 
 
-def get_playlist_thorough(sp, name):
-    """Search through sp.current_user()'s playlists to find the one called `name`.
+def get_playlist_thorough(sp, name: str):
+    """Search through the current user's playlists to find the one called :param name:, and return
+    it if found.
 
-    This will take longer than `get_playlist`, but it's more guaranteed to work according to the
-    API.
+    This will take longer than `get_playlist`, but it's more guaranteed to work (for playlists owned
+    by the current user).
     """
     limit = 50
     offset = 0
     managed_pl = None
+    playlists = sp.current_user_playlists(limit=limit, offset=offset)
 
-    while not managed_pl:
-        playlists = sp.current_user_playlists(limit=limit, offset=offset)
-
-        if not playlists['items']:
-            # None of the user's playlists matched. Time to stop looking
-            return None
-
+    while not managed_pl and playlists:
         for pl in playlists['items']:
             if pl['name'] == name:
                 managed_pl = pl
                 break
 
-        offset += limit
+        playlists = sp.next(playlists)
 
     return managed_pl
 
 
-def get_playlist_tracks(sp, pl):
-    """Return a dict of artist_id:track_id for each track in the playlist `pl`"""
-    limit = 100
-    offset = 0
-    pl_tracks = {}
-    results = sp.user_playlist_tracks(playlist_id=managed_pl['id'], limit=limit, offset=offset)
+def get_or_create_playlist(sp, managed_pl_name: str):
+    """Get the playlist called :param managed_pl_name:, asking to create it if not found"""
 
-    while results['items']:
-        for t in results['items']:
-            if t['track']['is_local']:
-                # Local tracks are not supported for now. Maybe log something for the user.
+    managed_pl = get_playlist(sp, managed_pl_name)
+    if not managed_pl:
+        managed_pl = get_playlist_thorough(sp, managed_pl_name)
+
+    if not managed_pl:
+        answer = input(f'No playlist named "{managed_pl_name}" found. Create one? [(y)/n] ')
+        if not answer or answer.lower()[0] == 'y':
+            managed_pl = sp.user_playlist_create(
+                sp.current_user()['id'], managed_pl_name, public=False,
+                description=f"Created by the_surface.py on {date.today()}")
+            print(f'\tPlaylist "{managed_pl_name}" has been created.')
+        else:
+            raise SystemExit(f'No playlist called {managed_pl_name} found. Nothing to do.')
+
+    return managed_pl
+
+
+def get_playlist_tracks(sp, pl: dict):
+    """Return a dict of artist_id:track_id for each track in the playlist `pl`
+
+    :param pl: The actual playlist dict from the Spotify API
+    """
+    limit = 100
+    pl_tracks = {}
+    results = sp.user_playlist_tracks(playlist_id=pl['id'], limit=limit)
+
+    if not results['items']:
+        return None
+
+    while results:
+        for track in results['items']:
+            if track['track']['is_local']:
+                # Local tracks are not supported because there's no way to add them to playlists via
+                # the Spotify Web API.
                 continue
 
-            artist = t['track']['artists'][0]['id']
-            pl_tracks[artist] = t['track']['id']
+            artist = track['track']['artists'][0]['id']
+            pl_tracks[artist] = track['track']['id']
 
-        offset += limit
-        results = sp.user_playlist_tracks(playlist_id=managed_pl['id'], limit=limit, offset=offset)
+        if not results['next']:
+            # No more tracks in the playlist.
+            break
+
+        results = sp.next(results)
 
     return pl_tracks
 
 
 def get_artist_first_saved_tracks(sp):
-    """Returns a dict of artist_id:track_id for the least-recently saved track of each artist in the Library"""
+    """Return {artist_id:track_id} for the longest-saved track of each artist in the Library"""
 
     # Get the total tracks to search from old to new in the Library
     total_tracks = sp.current_user_saved_tracks(limit=1)['total']
@@ -85,7 +131,10 @@ def get_artist_first_saved_tracks(sp):
     artist_tracks = {}
     results = sp.current_user_saved_tracks(limit=limit, offset=offset)
 
-    while results['items']:
+    if not results['items']:
+        return None
+
+    while results:
         for r in results['items'][::-1]:
             artist = r['track']['artists'][0]['id']
             if artist not in artist_tracks:
@@ -94,14 +143,14 @@ def get_artist_first_saved_tracks(sp):
         offset -= limit
         if offset < 0:
             if limit != 50:
-                # limit != 50 only when there are fewer than 50 tracks to be analyzed, i.e. the previous
-                # loop was the last
+                # limit != 50 only when there are fewer than 50 tracks to be analyzed, i.e. the
+                # previous loop was the last
                 break
 
             limit = -offset
             offset = 0
 
-        results = sp.current_user_saved_tracks(limit=limit, offset=offset)
+        results = sp.previous(results)
 
     return artist_tracks
 
@@ -123,15 +172,14 @@ def get_artist_difference(lib_artist_tracks, pl_artist_tracks, clean_pl_artist_t
     return new_tracks
 
 
-if __name__ == '__main__':
-    scope = [
+def main():
+    sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=[
         'playlist-modify-public',
         'playlist-modify-private',
         'playlist-read-private',
         'user-library-read',
-    ]
+    ]))
 
-    sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
     managed_pl_name = config('SURFACE_PLAYLIST_NAME', default='The Surface', cast=str)
     add_new_artists = config('SURFACE_ADD_NEW_ARTISTS', default=True, cast=bool)
     remove_missing_artists = config('SURFACE_REMOVE_MISSING_ARTISTS', default=True, cast=bool)
@@ -141,20 +189,11 @@ if __name__ == '__main__':
             'The SURFACE_ADD_NEW_ARTISTS and SURFACE_REMOVE_MISSING_ARTISTS environment variables are both False. Nothing to do.'
         )
 
-    print(f'Attempting to get the "{managed_pl_name}" playlist')
-    managed_pl = get_playlist(sp, managed_pl_name)
-    if not managed_pl:
-        answer = input(f'No playlist named "{managed_pl_name}" found. Create one? [(y)/n] ')
-        if not answer or answer.lower()[0] == 'y':
-            managed_pl = sp.user_playlist_create(
-                sp.current_user()['id'], managed_pl_name,
-                description=f"Created by the_surface.py on {date.today()}")
-            print(f'\tPlaylist "{managed_pl_name}" has been created.')
-        else:
-            raise SystemExit(f'No playlist called {managed_pl_name} found. Nothing to do.')
+    print(f'Getting managed playlist "{managed_pl_name}"')
+    managed_pl = get_or_create_playlist(sp, managed_pl_name)
 
     print(f'Collecting tracks from "{managed_pl_name}"... ')
-    pl_tracks = get_playlist_tracks(sp, managed_pl)
+    pl_tracks = get_playlist_tracks(sp, managed_pl) or []
     print(f'\tFound {len(pl_tracks)} tracks.')
 
     print('Gathering Library artist tracks... ')
@@ -176,3 +215,7 @@ if __name__ == '__main__':
             sp.playlist_add_items(managed_pl['id'], new_tracks[chunk:chunk + 100])
 
     print(f'\nPlaylist management is complete! Listen to {managed_pl_name} at {managed_pl["external_urls"]["spotify"]}')
+
+
+if __name__ == '__main__':
+    main()

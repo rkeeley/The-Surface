@@ -7,8 +7,6 @@ The Surface gives you a breadth-first look into your musical taste according to 
 
 ## Usage Instructions
 
-This script runs at (a URL that doesn't exist yet because I haven't done the web side or figured out hosting). Just log in with your Spotify account and give it permissions to access your library and private playlists: no installation is required.
-
 Running this code on your own requires a registered Spotify developer application with a client ID, client secret, and redirect URL. Check out the [Spotify App Settings Development Guide][1] for instructions on creating a developer application. The script expects that you have environment variables set for the Spotify application details, e.g.
 
 ```bash
@@ -36,30 +34,17 @@ Local files can be removed from playlists, so if an artist is found to be in the
 
 ## Future Plans
 
-- Documentation
+- Currently this script scans your entire Library every time it runs. For cases in which only new song additions are
+  desired, it could start from the Tracks that were saved more recently than the newest Track in the managed
+  playlist.
 
-- Parameterization
-    - As `$ENV` variables (since spotipy already does this)
-    - Do I want proper script parameters if `$ENV` variables work?
-    - Sorting order, eventually
-    - More tbd?
+- Documentation
 
 - Local file handling
     - Document around them/improve the documentation above
     - Test more removal use cases
 
 - Host this somewhere
-
-- Make public on github when enough of this stuff is done
-
-### Eventual Development Goals
-
-- Exiting by raising exceptions looks kind of awkward, even when the exception makes sense. Maybe exit with a bad
-  return code, but more gracefully, e.g. with SystemExit?
-
-- Logging
-    - Don't know if it would be worth logging all the changes made since it would slow down the script
-    - but also it's python, so who maybe who cares
 
 - Sort the songs in the playlist by artist name
     - right now they're sorted by first-saved because of how the code works
@@ -68,8 +53,6 @@ Local files can be removed from playlists, so if an artist is found to be in the
       artist is, move the new song to that track number, then keep track of how many additions you've done while
       adding new songs so you can put more songs in the list afterwards without having to query for the track
       listing again
-
-
 
 
 [1]: https://developer.spotify.com/documentation/general/guides/app-settings/#register-your-app
