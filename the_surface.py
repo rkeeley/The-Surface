@@ -6,7 +6,8 @@ from decouple import config
 from spotipy.oauth2 import SpotifyOAuth
 
 
-def get_playlist(sp, name: str, must_be_owner: bool = False):
+def get_playlist(sp, name: str,
+                 must_be_owner: bool = config('SURFACE_OWNED_PLAYLIST', default=False, cast=bool)):
     """Search Spotify for the playlist called `name` owned by the authenticated user and return it
     if found.
 
